@@ -3,12 +3,12 @@ package parseid
 import (
 	"embed"
 	"fmt"
+	"github.com/mavolin/repogen/internal/goimports"
+	"github.com/mavolin/repogen/internal/pkgutil"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"html/template"
 	"os"
-	"repogen/internal/goimports"
-	"repogen/internal/pkgutil"
 )
 
 const outName = "parse_id.repogen.go"
@@ -46,7 +46,7 @@ func Generate(pkg *packages.Package) error {
 
 	out, err := os.Create(outName)
 	if err != nil {
-		return fmt.Errorf("parseid: %w", err)
+		return wrapErr(err)
 	}
 
 	in, done, err := goimports.Pipe(out)
@@ -57,18 +57,23 @@ func Generate(pkg *packages.Package) error {
 	}
 
 	if err := tpl.Execute(in, data); err != nil {
-		return fmt.Errorf("parseid: %w", err)
+		return wrapErr(err)
 	}
 
 	if err := in.Close(); err != nil {
-		return fmt.Errorf("parseid: %w", err)
+		return wrapErr(err)
+	}
+
+	if err = done(); err != nil {
+		_ = tpl.Execute(out, data) // so the user can make sense of goimports err
+		return wrapErr(err)
 	}
 
 	if err := out.Close(); err != nil {
-		return fmt.Errorf("parseid: %w", err)
+		return wrapErr(err)
 	}
 
-	return done()
+	return nil
 }
 
 func findIDs(pkg *packages.Package) ([]ID, error) {
@@ -82,13 +87,13 @@ func findIDs(pkg *packages.Package) ([]ID, error) {
 		if len(dirs) == 0 {
 			continue
 		} else if len(dirs) > 1 {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("parseid: conflicting directives for %s", obj.Name()))
+			return nil, objErr(pkg, obj, "conflicting directives, only use a single parseid directive")
 		}
 
 		t := pkgutil.BaseType(obj.Type())
 		basic, ok := t.(*types.Basic)
 		if !ok || basic.Info()&types.IsInteger == 0 {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("parseid: %s: can only generated for int/uint types", obj.Name()))
+			return nil, objErr(pkg, obj, "type must be `(int|uint)(8|16|32|64)?`")
 		}
 
 		id := ID{
@@ -115,4 +120,15 @@ func findIDs(pkg *packages.Package) ([]ID, error) {
 	}
 
 	return ids, nil
+}
+
+func wrapErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("parseid: %w", err)
+}
+
+func objErr(pkg *packages.Package, obj types.Object, s string) error {
+	return pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("parseid: %s: %s", obj.Name(), s))
 }

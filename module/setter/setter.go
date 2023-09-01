@@ -2,14 +2,13 @@ package setter
 
 import (
 	"embed"
-	"errors"
 	"fmt"
+	"github.com/mavolin/repogen/internal/goimports"
+	"github.com/mavolin/repogen/internal/pkgutil"
+	"github.com/mavolin/repogen/internal/util"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"os"
-	"repogen/internal/goimports"
-	"repogen/internal/pkgutil"
-	"repogen/internal/util"
 	"strings"
 	"text/template"
 )
@@ -50,7 +49,7 @@ func Generate(pkg *packages.Package) error {
 
 	out, err := os.Create(outName)
 	if err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
 	}
 
 	in, done, err := goimports.Pipe(out)
@@ -61,18 +60,23 @@ func Generate(pkg *packages.Package) error {
 	}
 
 	if err := tpl.Execute(in, data); err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
 	}
 
 	if err := in.Close(); err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
+	}
+
+	if err = done(); err != nil {
+		_ = tpl.Execute(out, data) // so the user can make sense of goimports err
+		return wrapErr(err)
 	}
 
 	if err := out.Close(); err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
 	}
 
-	return done()
+	return nil
 }
 
 func findEntities(pkg *packages.Package) ([]Entity, error) {
@@ -82,14 +86,14 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
 
-		dirs := pkgutil.FindDirectives(pkg, obj, "search")
+		dirs := pkgutil.FindDirectives(pkg, obj, "setter")
 		if len(dirs) == 0 {
 			continue
 		}
 
-		s, ok := pkgutil.BaseType(obj.Type()).(*types.Struct)
+		s, ok := pkgutil.ElemType(obj.Type()).(*types.Struct)
 		if !ok {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), errors.New("search: cannot generate interface for non-struct type"))
+			return nil, objErr(pkg, obj, "cannot generate interface for non-struct type")
 		}
 
 		e := Entity{
@@ -107,7 +111,7 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 				name, typ, _ := strings.Cut(dir.Args, " ")
 				extra = append(extra, Field{Name: name, Type: typ})
 			default:
-				return nil, pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("%s: search: unrecognized directive %q", obj.Name(), dir.Directive))
+				return nil, objErr(pkg, obj, fmt.Sprintf("unrecognized directive %q", dir.Directive))
 			}
 		}
 
@@ -129,49 +133,40 @@ func listFields(pkg *packages.Package, obj types.Object, s *types.Struct) ([]Fie
 
 	for i := 0; i < s.NumFields(); i++ {
 		f := s.Field(i)
-		name := f.Name()
-		_ = name
 
 		tag := util.ParseStructTag(s.Tag(i))
-		var setter string
-		if tag != nil {
-			setter = tag["setter"]
-		}
 
-		var typ string
-		unptr, ok := pkgutil.Unptr(pkg, f.Type())
-		if unptr == "" {
-			return nil, pkgutil.PosError(pkg, obj.Pos(),
-				fmt.Errorf("%s.%s: setter: cannot setter for not named type", obj.Name(), f.Name()))
-		}
-
-		if ok {
-			typ = "omitnull.Val[" + unptr + "]"
-		} else {
-			typ = "omit.Val[" + unptr + "]"
-		}
-
-		switch setter {
-		case "":
+		name := tag["set"]
+		if name == "-" {
+			continue
+		} else if name == "" {
 			switch f.Name() {
-			case "ID":
-			case "CreatedAt", "CreatedBy":
-			case "UpdatedAt", "UpdatedBy":
-			case "DeletedAt", "DeletedBy":
+			case "ID", "CreatedAt", "CreatedBy", "UpdatedAt", "UpdatedBy", "DeletedAt", "DeletedBy":
+				continue
 			default:
-				fields = append(fields, Field{
-					Name: f.Name(),
-					Type: typ,
-				})
+				name = f.Name()
 			}
-		case "-":
-		default:
-			fields = append(fields, Field{
-				Name: setter,
-				Type: typ,
-			})
 		}
+
+		settyp := util.Settyp(pkg, pkg, s.Tag(i), f.Type())
+		if settyp == nil {
+			return nil, pkgutil.PosError(pkg, obj.Pos(),
+				fmt.Errorf("%s.%s: setter: cannot create setter for not-named type", obj.Name(), f.Name()))
+		}
+
+		fields = append(fields, Field{Name: name, Type: settyp.OptionType()})
 	}
 
 	return fields, nil
+}
+
+func wrapErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("setter: %w", err)
+}
+
+func objErr(pkg *packages.Package, obj types.Object, s string) error {
+	return pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("setter: %s: %s", obj.Name(), s))
 }

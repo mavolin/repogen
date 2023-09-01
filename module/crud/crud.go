@@ -2,16 +2,15 @@ package crud
 
 import (
 	"embed"
-	"errors"
 	"fmt"
 	"github.com/iancoleman/strcase"
+	"github.com/mavolin/repogen/internal/goimports"
+	"github.com/mavolin/repogen/internal/pkgutil"
+	"github.com/mavolin/repogen/internal/util"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"os"
 	"path/filepath"
-	"repogen/internal/goimports"
-	"repogen/internal/pkgutil"
-	"repogen/internal/util"
 	"strings"
 	"text/template"
 )
@@ -70,7 +69,7 @@ func Generate(pkg *packages.Package, packagePath string) error {
 
 	out, err := os.Create(outName)
 	if err != nil {
-		return fmt.Errorf("crud: %w", err)
+		return wrapErr(err)
 	}
 
 	in, done, err := goimports.Pipe(out)
@@ -83,24 +82,27 @@ func Generate(pkg *packages.Package, packagePath string) error {
 	}
 
 	if err := tpl.Execute(in, data); err != nil {
-		return fmt.Errorf("crud: %w", err)
+		return wrapErr(err)
 	}
 
 	if err := in.Close(); err != nil {
-		return fmt.Errorf("crud: %w", err)
+		return wrapErr(err)
+	}
+
+	if err = done(); err != nil {
+		_ = tpl.Execute(out, data) // so the user can make sense of goimports err
+		return wrapErr(err)
 	}
 
 	if err := out.Close(); err != nil {
-		return fmt.Errorf("crud: %w", err)
+		return wrapErr(err)
 	}
 
-	return done()
+	return nil
 }
 
 func findExtra(pkg *packages.Package, packagePath string) ([]string, error) {
 	var extra []string
-
-	pkg.Types.Scope().Len()
 
 	for i, path := range pkg.CompiledGoFiles {
 		if filepath.Dir(path) != packagePath {
@@ -153,40 +155,48 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 			continue
 		}
 
-		s, ok := pkgutil.BaseType(obj.Type()).(*types.Struct)
+		s, ok := pkgutil.ElemType(obj.Type()).(*types.Struct)
 		if !ok {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), errors.New("crud: cannot generate interface for non-struct type"))
+			return nil, objErr(pkg, obj, "cannot generate interface for non-struct type")
 		}
 
 		e := Entity{
 			Repository: obj.Name() + "Repository",
 			Singular:   obj.Name(),
 			Plural:     util.Plural(pkg, obj),
+			Create:     true,
+			Get:        true,
+			Search:     true,
+			Edit:       true,
+			Delete:     true,
 			SearchType: obj.Name() + "SearchData",
+		}
+
+		sdirs := pkgutil.FindDirectives(pkg, obj, "search")
+		for i := len(sdirs) - 1; i >= 0; i-- {
+			sdir := sdirs[i]
+			if sdir.Directive == "" {
+				if sdir.Args != "" {
+					e.SearchType = sdir.Args
+				}
+				break
+			}
 		}
 
 		for _, dir := range dirs {
 			switch dir.Directive {
 			case "":
-				if err := parsePrimary(pkg, obj, &e, dir.Args); err != nil {
-					return nil, err
+				if dir.Args != "" {
+					e.Repository = dir.Args
 				}
 			case "extra":
 				e.Extra = append(e.Extra, dir.Args)
-			case "search":
-				e.SearchType = dir.Args
-			case "repository":
-				e.Repository = dir.Args
-			case "*by":
-				e.CreatedByType, e.UpdatedByType, e.DeletedByType = dir.Args, dir.Args, dir.Args
-			case "createdby":
-				e.CreatedByType = dir.Args
-			case "updatedby":
-				e.UpdatedByType = dir.Args
-			case "deletedby":
-				e.DeletedByType = dir.Args
+			case "ops":
+				if err := parseOps(pkg, obj, &e, dir.Args); err != nil {
+					return nil, err
+				}
 			default:
-				return nil, pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("%s: crud: unrecognized directive %q", obj.Name(), dir.Directive))
+				return nil, objErr(pkg, obj, fmt.Sprintf("unrecognized directive %q", dir.Directive))
 			}
 		}
 
@@ -196,26 +206,20 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 			return nil, err
 		}
 		if len(e.PKs) == 0 {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("%s: crud: need at least one pk", obj.Name()))
+			return nil, objErr(pkg, obj, "need at least one pk")
 		}
 
-		if e.CreatedByType == "" {
-			e.CreatedByType, err = findUpdatedByType(pkg, obj, s, "CreatedBy")
-			if err != nil {
-				return nil, err
-			}
+		e.CreatedByType, err = findUpdatedByType(pkg, obj, s, "CreatedBy")
+		if err != nil {
+			return nil, err
 		}
-		if e.UpdatedByType == "" {
-			e.UpdatedByType, err = findUpdatedByType(pkg, obj, s, "UpdatedBy")
-			if err != nil {
-				return nil, err
-			}
+		e.UpdatedByType, err = findUpdatedByType(pkg, obj, s, "UpdatedBy")
+		if err != nil {
+			return nil, err
 		}
-		if e.DeletedByType == "" {
-			e.DeletedByType, err = findUpdatedByType(pkg, obj, s, "CreatedBy")
-			if err != nil {
-				return nil, err
-			}
+		e.DeletedByType, err = findUpdatedByType(pkg, obj, s, "CreatedBy")
+		if err != nil {
+			return nil, err
 		}
 
 		es = append(es, e)
@@ -224,8 +228,8 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 	return es, nil
 }
 
-func parsePrimary(pkg *packages.Package, obj types.Object, e *Entity, args string) error {
-	if len(args) == 0 {
+func parseOps(pkg *packages.Package, obj types.Object, e *Entity, args string) error {
+	if args == "" {
 		e.Create, e.Get, e.Search, e.Edit, e.Delete = true, true, true, true, true
 		return nil
 	}
@@ -244,7 +248,7 @@ func parsePrimary(pkg *packages.Package, obj types.Object, e *Entity, args strin
 		case "delete":
 			e.Delete = true
 		default:
-			return pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("unknown crud operation %q", op))
+			return objErr(pkg, obj, fmt.Sprintf("unknown crud operation %q", op))
 		}
 	}
 
@@ -257,20 +261,16 @@ func findPKs(pkg *packages.Package, obj types.Object, s *types.Struct) ([]Param,
 	for i := 0; i < s.NumFields(); i++ {
 		f := s.Field(i)
 		tag := util.ParseStructTag(s.Tag(i))
-		if tag == nil {
-			continue
-		}
-
 		if _, pk := tag["pk"]; !pk {
 			continue
 		}
 
 		pk := Param{
 			Name: strcase.ToLowerCamel(f.Name()),
-			Type: pkgutil.TypeName(pkg, f.Type()),
+			Type: pkgutil.NameInPackage(pkg, f.Type()),
 		}
 		if pk.Type == "" {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), errors.New("pk must be a named type"))
+			return nil, objErr(pkg, obj, "pk must be a named type")
 		}
 
 		pks = append(pks, pk)
@@ -286,19 +286,24 @@ func findUpdatedByType(pkg *packages.Package, obj types.Object, s *types.Struct,
 			continue
 		}
 
-		tag := util.ParseStructTag(s.Tag(i))
-		name := tag["unrel"]
-		if name != "" {
-			return name, nil
+		settyp := util.Settyp(pkg, pkg, s.Tag(i), f.Type())
+		if settyp == nil {
+			return "", objErr(pkg, obj, fmt.Sprintf("%s must be a named type", name))
 		}
 
-		name = pkgutil.TypeName(pkg, f.Type())
-		if name == "" {
-			return "", pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("%s must be a named type", name))
-		}
-
-		return name, nil
+		return settyp.Unptr(), nil
 	}
 
 	return "", nil
+}
+
+func wrapErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("crud: %w", err)
+}
+
+func objErr(pkg *packages.Package, obj types.Object, s string) error {
+	return pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("crud: %s: %s", obj.Name(), s))
 }

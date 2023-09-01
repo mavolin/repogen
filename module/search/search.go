@@ -2,14 +2,13 @@ package search
 
 import (
 	"embed"
-	"errors"
 	"fmt"
+	"github.com/mavolin/repogen/internal/goimports"
+	"github.com/mavolin/repogen/internal/pkgutil"
+	"github.com/mavolin/repogen/internal/util"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"os"
-	"repogen/internal/goimports"
-	"repogen/internal/pkgutil"
-	"repogen/internal/util"
 	"strings"
 	"text/template"
 )
@@ -50,7 +49,7 @@ func Generate(pkg *packages.Package) error {
 
 	out, err := os.Create(outName)
 	if err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
 	}
 
 	in, done, err := goimports.Pipe(out)
@@ -61,18 +60,23 @@ func Generate(pkg *packages.Package) error {
 	}
 
 	if err := tpl.Execute(in, data); err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
 	}
 
 	if err := in.Close(); err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
+	}
+
+	if err = done(); err != nil {
+		_ = tpl.Execute(out, data) // so the user can make sense of goimports err
+		return wrapErr(err)
 	}
 
 	if err := out.Close(); err != nil {
-		return fmt.Errorf("search: %w", err)
+		return wrapErr(err)
 	}
 
-	return done()
+	return nil
 }
 
 func findEntities(pkg *packages.Package) ([]Entity, error) {
@@ -87,9 +91,9 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 			continue
 		}
 
-		s, ok := pkgutil.BaseType(obj.Type()).(*types.Struct)
+		s, ok := pkgutil.ElemType(obj.Type()).(*types.Struct)
 		if !ok {
-			return nil, pkgutil.PosError(pkg, obj.Pos(), errors.New("search: cannot generate interface for non-struct type"))
+			return nil, objErr(pkg, obj, "cannot generate interface for non-struct type")
 		}
 
 		e := Entity{
@@ -106,7 +110,7 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 				name, typ, _ := strings.Cut(dir.Args, " ")
 				e.Fields = append(e.Fields, Field{Name: name, Type: typ})
 			default:
-				return nil, pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("%s: search: unrecognized directive %q", obj.Name(), dir.Directive))
+				return nil, objErr(pkg, obj, fmt.Sprintf("search: unrecognized directive %q", dir.Directive))
 			}
 		}
 
@@ -125,8 +129,17 @@ func findEntities(pkg *packages.Package) ([]Entity, error) {
 func findSearchFields(pkg *packages.Package, obj types.Object, s *types.Struct) ([]Field, error) {
 	fields := make([]Field, 0, s.NumFields())
 
+	var includeDeleted bool
+
 	for i := 0; i < s.NumFields(); i++ {
 		f := s.Field(i)
+		if f.Name() == "DeletedAt" || f.Name() == "DeletedBy" {
+			if !includeDeleted {
+				fields = append(fields, Field{Name: "IncludeDeleted", Type: "bool"})
+				includeDeleted = true
+			}
+		}
+
 		tag := util.ParseStructTag(s.Tag(i))
 		if tag == nil {
 			continue
@@ -137,17 +150,9 @@ func findSearchFields(pkg *packages.Package, obj types.Object, s *types.Struct) 
 			continue
 		}
 
-		var typ string
-		unptr, ok := pkgutil.Unptr(pkg, f.Type())
-		if unptr == "" {
-			return nil, pkgutil.PosError(pkg, obj.Pos(),
-				fmt.Errorf("%s.%s: search: cannot search for not named type", obj.Name(), f.Name()))
-		}
-
-		if ok {
-			typ = "omitnull.Val[" + unptr + "]"
-		} else {
-			typ = "omit.Val[" + unptr + "]"
+		settyp := util.Settyp(pkg, pkg, s.Tag(i), f.Type())
+		if settyp == nil {
+			return nil, objErr(pkg, obj, "cannot create setter for non-named type")
 		}
 
 		split := strings.Split(search, " ")
@@ -155,26 +160,42 @@ func findSearchFields(pkg *packages.Package, obj types.Object, s *types.Struct) 
 		case "":
 			fields = append(fields, Field{
 				Name: f.Name(),
-				Type: typ,
+				Type: settyp.OptionType(),
 			})
 		case "range":
 			if len(split) != 3 && len(split) != 1 {
-				return nil, pkgutil.PosError(pkg, obj.Pos(),
-					fmt.Errorf("%s.%s: search: invalid range directive, need two or no names after range", obj.Name(), f.Name()))
+				return nil, objErr(pkg, obj,
+					fmt.Sprintf(`invalid range directive %q, expected "range" or "range <fromVar> <untilVar"`, search))
 			}
 
 			if len(split) == 1 {
 				fields = append(fields,
-					Field{Name: f.Name() + "From", Type: typ}, Field{Name: f.Name() + "Until", Type: typ})
+					Field{Name: f.Name() + "From", Type: settyp.OptionType()},
+					Field{Name: f.Name() + "Until", Type: settyp.OptionType()})
 				continue
 			}
 
-			fields = append(fields, Field{Name: split[1], Type: typ}, Field{Name: split[2], Type: typ})
+			fields = append(fields,
+				Field{Name: split[1], Type: settyp.OptionType()},
+				Field{Name: split[2], Type: settyp.OptionType()})
 		default:
-			return nil, pkgutil.PosError(pkg, obj.Pos(),
-				fmt.Errorf("%s.%s: search: invalid search directive %q", obj.Name(), f.Name(), search))
+			fields = append(fields, Field{
+				Name: search,
+				Type: settyp.OptionType(),
+			})
 		}
 	}
 
 	return fields, nil
+}
+
+func wrapErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("search: %w", err)
+}
+
+func objErr(pkg *packages.Package, obj types.Object, s string) error {
+	return pkgutil.PosError(pkg, obj.Pos(), fmt.Errorf("search: %s: %s", obj.Name(), s))
 }

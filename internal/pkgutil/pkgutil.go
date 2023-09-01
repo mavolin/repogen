@@ -21,11 +21,40 @@ func BaseType(t types.Type) types.Type {
 		if u == t || u == nil {
 			break
 		}
-
 		t = u
 	}
 
 	return t
+}
+
+func ElemType(t types.Type) types.Type {
+	for {
+		switch typ := t.(type) {
+		case *types.Slice:
+			t = typ.Elem()
+		case *types.Array:
+			t = typ.Elem()
+		case *types.Pointer:
+			t = typ.Elem()
+		default:
+			u := t.Underlying()
+			if u == t || u == nil {
+				return t
+			}
+			t = u
+		}
+	}
+}
+
+func LookupField(s *types.Struct, name string) *types.Var {
+	for i := 0; i < s.NumFields(); i++ {
+		f := s.Field(i)
+		if f.Name() == name {
+			return f
+		}
+	}
+
+	return nil
 }
 
 func FileForPos(pkg *packages.Package, pos token.Pos) *ast.File {
@@ -41,7 +70,7 @@ func FileForPos(pkg *packages.Package, pos token.Pos) *ast.File {
 	return nil
 }
 
-func TypeName(currentPkg *packages.Package, t types.Type) string {
+func NameInPackage(currentPkg *packages.Package, t types.Type) string {
 	var b strings.Builder
 
 	for {
@@ -72,10 +101,10 @@ func TypeName(currentPkg *packages.Package, t types.Type) string {
 func Unptr(currentPkg *packages.Package, t types.Type) (unptr string, ok bool) {
 	ptr, ok := t.(*types.Pointer)
 	if !ok {
-		return TypeName(currentPkg, t), false
+		return NameInPackage(currentPkg, t), false
 	}
 
-	return TypeName(currentPkg, ptr.Elem()), true
+	return NameInPackage(currentPkg, ptr.Elem()), true
 }
 
 func Qual(currentPkg *packages.Package, n *types.TypeName) string {

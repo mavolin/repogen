@@ -15,7 +15,7 @@ func {{.FuncName}}(s string) ({{.Type}}, error) {
     num, err := strconv.ParseInt(s, 10, {{.Bits}})
 {{- end }}
     if err != nil {
-        return 0, fmt.Errorf("repository: {{.FuncName}}: invalid id: %w", err)
+        return 0, fmt.Errorf("{{$.Package}}: {{.FuncName}}: invalid id: %w", err)
     }
     return {{.Type}}(num), nil
 }

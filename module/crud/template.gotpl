@@ -6,21 +6,32 @@ import "context"
 
 type (
     Repository interface {
+{{- if .Base }}
+    {{- range .Base }}
+        {{.}}
+    {{- end }}
+{{ end }}
+
     {{- range .Entities }}
         {{.Repository}}
     {{- end }}
 
-    {{- range .Extra }}
+{{- if .Extra }}
+    {{ range .Extra }}
         {{.}}
     {{- end }}
+{{- end }}
     }
 
 {{- range .Entities }}
 
     {{.Repository}} interface {
+{{- if $.Base }}
     {{- range $.Base }}
         {{.}}
     {{- end }}
+{{ end }}
+
     {{- if .Create }}
         Create{{.Singular}}(ctx context.Context
             {{- if ne .CreatedByType "" }}, createdBy {{.CreatedByType}}{{ end -}}
@@ -29,10 +40,10 @@ type (
                 err error)
     {{- end }}
     {{- if .Get}}
-        {{.Singular}}(ctx context.Context {{- range .PKs }}, {{.Name}} {{.Type}}{{ end }}) (err error)
+        {{.Singular}}(ctx context.Context {{- range .PKs }}, {{.Name}} {{.Type}}{{ end }}) (res *{{.Singular}}, err error)
     {{- end }}
     {{- if .Search }}
-        {{.Plural}}(ctx context.Context, search {{.SearchType}}) (res []{{.Singular}}, err error)
+        {{.Plural}}(ctx context.Context, search {{.SearchType}}) (res []*{{.Singular}}, err error)
     {{- end }}
     {{- if .Edit }}
         Edit{{.Singular}}(ctx context.Context

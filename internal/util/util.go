@@ -1,10 +1,11 @@
 package util
 
 import (
+	"github.com/mavolin/repogen/internal/pkgutil"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"reflect"
-	"repogen/internal/pkgutil"
+	"strings"
 )
 
 func Plural(pkg *packages.Package, obj types.Object) string {
@@ -16,12 +17,90 @@ func Plural(pkg *packages.Package, obj types.Object) string {
 	return dirs[0].Args
 }
 
+type SettypType struct {
+	Type    string
+	IsPtr   bool
+	IsSlice bool
+}
+
+func (t SettypType) Unptr() string {
+	if t.IsPtr {
+		return t.Type[1:]
+	}
+
+	return t.Type
+}
+
+func (t SettypType) Unslice() string {
+	if t.IsSlice {
+		return t.Type[2:]
+	}
+
+	return t.Type
+}
+
+func (t SettypType) Elem() string {
+	if t.IsPtr {
+		return t.Unptr()
+	} else if t.IsSlice {
+		return t.Unslice()
+	}
+
+	return t.Type
+}
+
+func (t SettypType) OptionType() string {
+	if t.IsPtr {
+		return "omitnull.Val[" + t.Unptr() + "]"
+	}
+
+	return "omit.Val[" + t.Type + "]"
+}
+
+func Settyp(pkg, tagPkg *packages.Package, tagStr string, fieldTyp types.Type) *SettypType {
+	tag := ParseStructTag(tagStr)
+
+	settyp := tag["settyp"]
+	if settyp != "" {
+		isPtr := strings.HasPrefix(settyp, "*")
+		isSlice := strings.HasPrefix(settyp, "[]")
+
+		if !strings.Contains(settyp, ".") && pkg.PkgPath != tagPkg.PkgPath {
+			var pre string
+			if isPtr {
+				pre = "*"
+				settyp = settyp[1:]
+			} else if isSlice {
+				pre = "[]"
+				settyp = settyp[2:]
+			}
+
+			settyp = pre + tagPkg.Name + "." + settyp
+		}
+
+		return &SettypType{Type: settyp, IsPtr: isPtr, IsSlice: isSlice}
+	}
+
+	_, isPtr := fieldTyp.(*types.Pointer)
+	_, isSlice := fieldTyp.(*types.Slice)
+	typ := pkgutil.NameInPackage(pkg, fieldTyp)
+	if typ == "" {
+		return nil
+	}
+
+	if tag["rel"] != "" {
+		typ += "Setter"
+	}
+
+	return &SettypType{Type: typ, IsPtr: isPtr, IsSlice: isSlice}
+}
+
 type StructTag map[string]string
 
 func ParseStructTag(tag string) StructTag {
 	tag = reflect.StructTag(tag).Get("repogen")
 	if tag == "" {
-		return nil
+		return StructTag{}
 	}
 
 	t := make(StructTag)

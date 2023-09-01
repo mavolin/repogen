@@ -2,12 +2,13 @@ package main
 
 import (
 	"errors"
+	"github.com/mavolin/repogen/module/boil"
+	"github.com/mavolin/repogen/module/crud"
+	"github.com/mavolin/repogen/module/parseid"
+	"github.com/mavolin/repogen/module/search"
+	"github.com/mavolin/repogen/module/setter"
 	"golang.org/x/tools/go/packages"
 	"path/filepath"
-	"repogen/module/crud"
-	"repogen/module/parseid"
-	"repogen/module/search"
-	"repogen/module/setter"
 )
 
 func main() {
@@ -53,6 +54,30 @@ func run() error {
 			errs = append(errs, err)
 		}
 	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
 
-	return errors.Join(errs...)
+	// reload for boil
+	load, err = packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedCompiledGoFiles | packages.NeedSyntax,
+	}, ".")
+	if err != nil {
+		return err
+	}
+
+	if len(load) == 0 {
+		return errors.New("failed to load current directory (does it contain any go files?)")
+	} else if len(load) != 1 {
+		return errors.New("expected to only load a single package")
+	}
+
+	pkg = load[0]
+
+	err = boil.Generate(pkg, wd)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

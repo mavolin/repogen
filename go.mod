@@ -1,4 +1,4 @@
-module repogen
+module github.com/mavolin/repogen
 
 go 1.21
 

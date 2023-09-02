@@ -106,7 +106,7 @@ func Unwrap{{.SetterName}}s(setters ...{{.QualSetterName}}) []{{.ModelsName}}Bat
 }
 
 func unwrap{{.SetterName}}(set {{.QualSetterName}}) ({{.ModelsName}}, boil.Columns, uint64) {
-    setCols := make([]string, 0, {{len .Fields}})
+    setCols := make([]string, 0, {{len .Fields}}+1)
     var setColsInt uint64
 
     e := {{.ModelsName}}{
@@ -117,7 +117,12 @@ func unwrap{{.SetterName}}(set {{.QualSetterName}}) ({{.ModelsName}}, boil.Colum
 {{- end }}
     }
 
-    return e, boil.Greylist(setCols...), setColsInt
+{{- if .AlwaysUpdatedAt }}
+
+    setCols = append(setCols, {{.ModelsName}}Columns.UpdatedAt)
+{{- end}}
+
+    return e, boil.Whitelist(setCols...), setColsInt
 }
 
 {{ end -}}

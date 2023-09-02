@@ -39,6 +39,8 @@ type (
 
 		NoUnwrap, NoWrap bool
 
+		AlwaysUpdatedAt bool
+
 		Fields []Field
 	}
 	Field struct {
@@ -166,7 +168,8 @@ func findModelsDirectives(pkg *packages.Package, packagePath string) ([]ModelsDi
 				if len(load) == 0 {
 					return nil, pkgutil.PosError(pkg, cg.Pos(), errors.New("%s: failed to load directory as package"))
 				} else if len(load) != 1 {
-					return nil, pkgutil.PosError(pkg, cg.Pos(), errors.New("%s: expected to only load a single package"))
+					return nil, pkgutil.PosError(pkg, cg.Pos(),
+						errors.New("%s: expected to only load a single package"))
 				}
 
 				models = append(models, ModelsDirective{Path: dir.Args, Pkg: load[0]})
@@ -213,7 +216,8 @@ func findEntities(pkg *packages.Package, mdir ModelsDirective) ([]Entity, error)
 		setterObj := pkg.Types.Scope().Lookup(e.SetterName)
 		if setterObj == nil {
 			return nil,
-				objErr(pkg, getterObj, fmt.Sprintf("found no setter named %q (did you forget a repogen:setter directive?)", e.SetterName))
+				objErr(pkg, getterObj,
+					fmt.Sprintf("found no setter named %q (did you forget a repogen:setter directive?)", e.SetterName))
 		}
 		setter, ok := pkgutil.ElemType(setterObj.Type()).(*types.Struct)
 		if !ok {
@@ -221,12 +225,23 @@ func findEntities(pkg *packages.Package, mdir ModelsDirective) ([]Entity, error)
 		}
 		e.QualSetterName = pkgutil.NameInPackage(mdir.Pkg, setterObj.Type())
 
+		for i := 0; i < getter.NumFields(); i++ {
+			f := getter.Field(i)
+			if f.Name() == "UpdatedAt" {
+				e.AlwaysUpdatedAt = true
+			}
+		}
+
 		e.ModelsName = e.GetterName
 		for _, dir := range dirs {
 			switch dir.Directive {
 			case "":
 				if dir.Args != "" {
 					e.ModelsName = dir.Args
+				}
+			case "always-updated-at":
+				if dir.Args == "false" {
+					e.AlwaysUpdatedAt = false
 				}
 			case "ops":
 				e.NoWrap = true
@@ -276,7 +291,10 @@ func findEntities(pkg *packages.Package, mdir ModelsDirective) ([]Entity, error)
 	return es, nil
 }
 
-func findFields(pkg *packages.Package, mdir ModelsDirective, getterObj, modelObj types.Object, getter, setter, model, relations *types.Struct) ([]Field, error) {
+func findFields(
+	pkg *packages.Package, mdir ModelsDirective, getterObj, modelObj types.Object,
+	getter, setter, model, relations *types.Struct,
+) ([]Field, error) {
 	fields := make([]Field, 0, getter.NumFields())
 
 	for i := 0; i < getter.NumFields(); i++ {
@@ -404,7 +422,8 @@ func findFields(pkg *packages.Package, mdir ModelsDirective, getterObj, modelObj
 			relf := pkgutil.LookupField(relations, f.RelName)
 			if relf == nil {
 				return nil, objErr(pkg, getterObj,
-					fmt.Sprintf("%s: field declared as relation, but model has no field \".R.%s\"", f.GetterName, f.RelName))
+					fmt.Sprintf("%s: field declared as relation, but model has no field \".R.%s\"", f.GetterName,
+						f.RelName))
 			}
 			relType := resolveType(mdir.Pkg, relf.Type())
 			if relType == nil {

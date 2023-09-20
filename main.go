@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/mavolin/repogen/module/bob"
 	"github.com/mavolin/repogen/module/boil"
 	"github.com/mavolin/repogen/module/crud"
 	"github.com/mavolin/repogen/module/parseid"
@@ -18,23 +19,7 @@ func main() {
 }
 
 func run() error {
-	load, err := packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedCompiledGoFiles | packages.NeedSyntax,
-	}, ".")
-	if err != nil {
-		return err
-	}
-
-	if len(load) == 0 {
-		return errors.New("failed to load current directory (does it contain any go files?)")
-	} else if len(load) != 1 {
-		return errors.New("expected to only load a single package")
-	}
-
-	pkg := load[0]
-	if len(pkg.CompiledGoFiles) != len(pkg.Syntax) {
-		return errors.New("len(CompiledGoFiles) != len(Syntax)")
-	}
+	pkg, err := loadPackage()
 
 	wd, err := filepath.Abs(".")
 	if err != nil {
@@ -58,26 +43,45 @@ func run() error {
 		return errors.Join(errs...)
 	}
 
-	// reload for boil
-	load, err = packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedCompiledGoFiles | packages.NeedSyntax,
-	}, ".")
+	// reload for boil and bob
+	pkg, err = loadPackage()
 	if err != nil {
 		return err
 	}
 
-	if len(load) == 0 {
-		return errors.New("failed to load current directory (does it contain any go files?)")
-	} else if len(load) != 1 {
-		return errors.New("expected to only load a single package")
+	go func() { errChan <- boil.Generate(pkg, wd) }()
+	go func() { errChan <- bob.Generate(pkg, wd) }()
+
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil {
+			errs = append(errs, err)
+		}
 	}
-
-	pkg = load[0]
-
-	err = boil.Generate(pkg, wd)
-	if err != nil {
-		return err
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil
+}
+
+func loadPackage() (*packages.Package, error) {
+	load, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedCompiledGoFiles | packages.NeedSyntax,
+	}, ".")
+	if err != nil {
+		return nil, err
+	}
+
+	if len(load) == 0 {
+		return nil, errors.New("failed to load current directory (does it contain any go files?)")
+	} else if len(load) != 1 {
+		return nil, errors.New("expected to only load a single package")
+	}
+
+	pkg := load[0]
+	if len(pkg.CompiledGoFiles) != len(pkg.Syntax) {
+		return nil, errors.New("len(CompiledGoFiles) != len(Syntax)")
+	}
+
+	return pkg, nil
 }

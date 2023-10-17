@@ -69,6 +69,7 @@ type (
 	}
 	SetterType struct {
 		Type       string
+		Unptr      string
 		Elem       string
 		IsNullable bool
 		IsArray    bool
@@ -337,6 +338,7 @@ func findFields(
 			f.SetterType = SetterType{
 				Type:       settyp.Type,
 				Elem:       settyp.Elem(),
+				Unptr:      settyp.Unptr(),
 				IsNullable: settyp.IsPtr,
 				IsArray:    settyp.IsSlice,
 			}

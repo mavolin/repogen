@@ -2,17 +2,17 @@
     {{- if .SetterType.IsNullable -}}
         {{- if .SetterType.IsArray -}}
             {{- if .UnwrapFunc -}}
-                optionutil.SetOmitNullArrayConvert[{{.SetterType.Elem}}, {{.ModelsType.Elem}}, {{.SetterType.Type}}, {{.ModelsType.Type}}](set.{{.SetterName}}, {{.UnwrapFunc}})
+                optionutil.SetOmitNullArrayConvert[{{.SetterType.Elem}}, {{.ModelsType.Elem}}, {{.SetterType.Unptr}}, {{.ModelsType.Type}}](set.{{.SetterName}}, {{.UnwrapFunc}})
             {{- else if ne .SetterType.Elem .ModelsType.Elem -}}
-                optionutil.SetOmitNullArrayConvert[{{.SetterType.Elem}}, {{.ModelsType.Elem}}, {{.SetterType.Type}}, {{.ModelsType.Type}}](set.{{.SetterName}}, func(t {{.SetterType.Elem}}) {{.ModelsType.Elem}} { return {{.ModelsType.Elem}}(t) })
+                optionutil.SetOmitNullArrayConvert[{{.SetterType.Elem}}, {{.ModelsType.Elem}}, {{.SetterType.Unptr}}, {{.ModelsType.Type}}](set.{{.SetterName}}, func(t {{.SetterType.Elem}}) {{.ModelsType.Elem}} { return {{.ModelsType.Elem}}(t) })
             {{- else -}}
-                optionutil.SetOmitNullArray[{{.SetterType.Elem}}, {{.SetterType.Type}}, {{.ModelsType.Type}}](set.{{.SetterName}})
+                optionutil.SetOmitNullArray[{{.SetterType.Elem}}, {{.SetterType.Unptr}}, {{.ModelsType.Type}}](set.{{.SetterName}})
             {{- end -}}
         {{- else -}}
             {{- if .UnwrapFunc -}}
                 omitnull.Map(set.{{.SetterName}}, {{.UnwrapFunc}})
             {{- else if ne .SetterType.Elem .ModelsType.Type -}}
-                omitnull.Map(set.{{.SetterName}}, func(t {{.SetterType.Type}}) {{.ModelsType.Type}} { return {{.ModelsType.Type}}(t) })
+                omitnull.Map(set.{{.SetterName}}, func(t {{.SetterType.Elem}}) {{.ModelsType.Type}} { return {{.ModelsType.Type}}(t) })
             {{- else -}}
                 set.{{.SetterName}}
             {{- end -}}
@@ -133,28 +133,26 @@ func Wrap{{.ModelsGetterName}}(e *{{.ModelsGetterName}}) *{{.QualGetterName}} {
 
 {{- if $hasRels}}
 
-    if e.R != nil {
-    {{- range .Fields }}
+    {{ range .Fields }}
         {{- if .RelName }}
-        w.{{.GetterName}} = {{ template "wrapField" . }}
+    w.{{.GetterName}} = {{ template "wrapField" . }}
         {{- end }}
     {{- end }}
-    }
 {{- end }}
 
     return &w
 }
 
-func Wrap{{.ModelsGetterName}}s(es ...*{{.ModelsGetterName}}) []*{{.QualGetterName}} {
+func Wrap{{.ModelsGetterName}}s(es ...*{{.ModelsGetterName}}) []{{.QualGetterName}} {
     if es == nil {
         return nil
     } else if len(es) == 0 {
-        return []*{{.QualGetterName}}{}
+        return []{{.QualGetterName}}{}
     }
 
-    wraps := make([]*{{.QualGetterName}}, len(es))
+    wraps := make([]{{.QualGetterName}}, len(es))
     for i, e := range es {
-        wraps[i] = Wrap{{.ModelsGetterName}}(e)
+        wraps[i] = *Wrap{{.ModelsGetterName}}(e)
     }
     return wraps
 }

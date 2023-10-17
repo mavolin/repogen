@@ -5,6 +5,7 @@ import (
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"reflect"
+	"regexp"
 	"strings"
 )
 
@@ -33,6 +34,10 @@ func (t SettypType) Unptr() string {
 
 func (t SettypType) Unslice() string {
 	if t.IsSlice {
+		if t.IsPtr {
+			return t.Type[3:]
+		}
+
 		return t.Type[2:]
 	}
 
@@ -40,10 +45,10 @@ func (t SettypType) Unslice() string {
 }
 
 func (t SettypType) Elem() string {
-	if t.IsPtr {
-		return t.Unptr()
-	} else if t.IsSlice {
+	if t.IsSlice {
 		return t.Unslice()
+	} else if t.IsPtr {
+		return t.Unptr()
 	}
 
 	return t.Type
@@ -63,14 +68,20 @@ func Settyp(pkg, tagPkg *packages.Package, tagStr string, fieldTyp types.Type) *
 	settyp := tag["settyp"]
 	if settyp != "" {
 		isPtr := strings.HasPrefix(settyp, "*")
-		isSlice := strings.HasPrefix(settyp, "[]")
+		var isSlice bool
+		if isPtr {
+			isSlice = strings.HasPrefix(settyp[1:], "[]")
+		} else {
+			isSlice = strings.HasPrefix(settyp, "[]")
+		}
 
-		if !strings.Contains(settyp, ".") && pkg.PkgPath != tagPkg.PkgPath {
+		if !strings.Contains(settyp, ".") && pkg.PkgPath != tagPkg.PkgPath && !isPrimitive(settyp) {
 			var pre string
 			if isPtr {
 				pre = "*"
 				settyp = settyp[1:]
-			} else if isSlice {
+			}
+			if isSlice {
 				pre = "[]"
 				settyp = settyp[2:]
 			}
@@ -93,6 +104,12 @@ func Settyp(pkg, tagPkg *packages.Package, tagStr string, fieldTyp types.Type) *
 	}
 
 	return &SettypType{Type: typ, IsPtr: isPtr, IsSlice: isSlice}
+}
+
+var primitiveRegexp = regexp.MustCompile(`^*?(?:\[])?(?:bool|string|u?int(?:8|16|32|64)?|float(?:32|64)|complex(?:64|128))$`)
+
+func isPrimitive(s string) bool {
+	return primitiveRegexp.MatchString(s)
 }
 
 type StructTag map[string]string

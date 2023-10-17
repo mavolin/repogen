@@ -20,8 +20,8 @@ func SetOmitArrayConvert[EA, EB any, A ~[]EA, B ~[]EB](val omit.Val[A], conv fun
 	})
 }
 
-func SetOmitNullArray[E any, A, B ~[]E](val omit.Val[A]) omit.Val[B] {
-	return omit.Map(val, func(a A) B { return B(a) })
+func SetOmitNullArray[E any, A, B ~[]E](val omitnull.Val[A]) omitnull.Val[B] {
+	return omitnull.Map(val, func(a A) B { return B(a) })
 }
 
 func SetOmitNullArrayConvert[EA, EB any, A ~[]EA, B ~[]EB](val omitnull.Val[A], conv func(EA) EB) omitnull.Val[B] {

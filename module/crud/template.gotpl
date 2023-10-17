@@ -43,7 +43,7 @@ type (
         {{.Singular}}(ctx context.Context {{- range .PKs }}, {{.Name}} {{.Type}}{{ end }}) (res *{{.Singular}}, err error)
     {{- end }}
     {{- if .Search }}
-        {{.Plural}}(ctx context.Context, search {{.SearchType}}) (res []*{{.Singular}}, err error)
+        {{.Plural}}(ctx context.Context, search {{.SearchType}}) (res []{{.Singular}}, err error)
     {{- end }}
     {{- if .Edit }}
         Edit{{.Singular}}(ctx context.Context
@@ -56,6 +56,12 @@ type (
             {{- range .PKs }}, {{.Name}} {{.Type}}{{ end -}}
             {{- if ne .DeletedByType "" }}, deletedBy {{.DeletedByType}}{{ end }}) (err error)
     {{- end }}
+
+    {{- if $.Base }}
+        {{- range .Extra }}
+        {{.}}
+        {{- end }}
+    {{ end }}
     }
 {{- end }}
 )

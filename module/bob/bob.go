@@ -347,7 +347,7 @@ func findFields(
 			}
 		}
 
-		if !(f.SetterType.IsArray && tag["rel"] != "") {
+		if !(f.GetterType.IsArray && tag["rel"] != "") {
 			f.ModelsName = f.GetterName
 			if name := tag["bob"]; name != "" {
 				f.ModelsName = name

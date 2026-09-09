@@ -6,7 +6,7 @@ import (
 )
 
 func SetOmit[T any](val omit.Val[T], col string, setCols *[]string, colI uint8, setColsInt *uint64) T {
-	if val.IsSet() {
+	if val.IsValue() {
 		*setCols = append(*setCols, col)
 		*setColsInt = 1 << colI
 	}
@@ -16,7 +16,7 @@ func SetOmit[T any](val omit.Val[T], col string, setCols *[]string, colI uint8, 
 func SetOmitConvert[T any, C any](
 	val omit.Val[T], conv func(T) C, col string, setCols *[]string, colI uint8, setColsInt *uint64,
 ) C {
-	if val.IsSet() {
+	if val.IsValue() {
 		*setCols = append(*setCols, col)
 		*setColsInt = 1 << colI
 		return conv(val.MustGet())
@@ -26,7 +26,7 @@ func SetOmitConvert[T any, C any](
 }
 
 func SetOmitArray[T any, W ~[]T](val omit.Val[[]T], col string, setCols *[]string, colI uint8, setColsInt *uint64) W {
-	if val.IsSet() {
+	if val.IsValue() {
 		*setCols = append(*setCols, col)
 		*setColsInt = 1 << colI
 	}
@@ -36,7 +36,7 @@ func SetOmitArray[T any, W ~[]T](val omit.Val[[]T], col string, setCols *[]strin
 func SetOmitArrayConvert[T any, C any, W ~[]C](
 	val omit.Val[[]T], conv func(T) C, col string, setCols *[]string, colI uint8, setColsInt *uint64,
 ) W {
-	if val.IsSet() {
+	if val.IsValue() {
 		*setCols = append(*setCols, col)
 		*setColsInt = 1 << colI
 
@@ -57,10 +57,10 @@ func SetOmitArrayConvert[T any, C any, W ~[]C](
 func SetOmitNull[T any, W any](
 	val omitnull.Val[T], constr func(T, bool) W, col string, setCols *[]string, colI uint8, setColsInt *uint64,
 ) W {
-	if val.IsSet() || val.IsNull() {
+	if val.IsValue() || val.IsNull() {
 		*setCols = append(*setCols, col)
 		*setColsInt = 1 << colI
-		return constr(val.GetOrZero(), val.IsSet())
+		return constr(val.GetOrZero(), val.IsValue())
 	}
 	var z W
 	return z
@@ -70,10 +70,10 @@ func SetOmitNullConvert[T any, C any, W any](
 	val omitnull.Val[T], constr func(C, bool) W, conv func(T) C, col string, setCols *[]string, colI uint8,
 	setColsInt *uint64,
 ) W {
-	if val.IsSet() || val.IsNull() {
+	if val.IsValue() || val.IsNull() {
 		*setCols = append(*setCols, col)
 		*setColsInt = 1 << colI
-		return constr(conv(val.GetOrZero()), val.IsSet())
+		return constr(conv(val.GetOrZero()), val.IsValue())
 	}
 	var z W
 	return z

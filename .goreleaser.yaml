@@ -1,5 +1,5 @@
-build:
-  skip: true
+version: 2
+
 changelog:
   use: github
   sort: asc

@@ -5,9 +5,10 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/go/packages"
 	"strconv"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func PosError(pkg *packages.Package, pos token.Pos, err error) error {
@@ -91,6 +92,9 @@ func NameInPackage(currentPkg *packages.Package, t types.Type) string {
 			return b.String()
 		case *types.Basic:
 			b.WriteString(typ.Name())
+			return b.String()
+		case *types.Alias:
+			b.WriteString(Qual(currentPkg, typ.Obj()))
 			return b.String()
 		default:
 			return ""

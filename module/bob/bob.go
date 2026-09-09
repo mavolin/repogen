@@ -4,15 +4,16 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"github.com/mavolin/repogen/internal/goimports"
-	"github.com/mavolin/repogen/internal/pkgutil"
-	"github.com/mavolin/repogen/internal/util"
 	"go/types"
-	"golang.org/x/tools/go/packages"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/mavolin/repogen/internal/goimports"
+	"github.com/mavolin/repogen/internal/pkgutil"
+	"github.com/mavolin/repogen/internal/util"
+	"golang.org/x/tools/go/packages"
 )
 
 const outName = "bob.repogen.go"

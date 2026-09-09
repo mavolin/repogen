@@ -1,10 +1,8 @@
 name: GoReleaser
-
 on:
   push:
     # run only against tags
-    tags:
-      - '*'
+    tags: [ '*' ]
 
 permissions:
   contents: write
@@ -14,14 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Fetch All Tags
-        run: git fetch --force --tags
+      - name: Enter direnv
+        uses: ./.github/actions/enter-direnv
+      - name: Cache Go Modules
+        uses: actions/setup-go@v6
+
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v4
-        with:
-          args: release
+        run: goreleaser release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

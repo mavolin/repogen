@@ -4,9 +4,9 @@ runs:
   using: composite
   steps:
     - name: Install Nix
-      uses: nixbuild/nix-quick-install-action@v34
+      uses: nixbuild/nix-quick-install-action@v35
     - name: Restore and Save Nix Store
-      uses: nix-community/cache-nix-action@v6
+      uses: nix-community/cache-nix-action@v7
       with:
         primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}-${{ hashFiles('flake.nix') }}
         restore-prefixes-first-match: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}-
